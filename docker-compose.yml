@@ -1,0 +1,14 @@
+version: "3"
+services:
+  axmouth.disco-music-bot:
+    working_dir: /var/lib/axmouth
+    restart: unless-stopped
+    tty: true
+    image: ghcr.io/axmouth/disco-music-bot:latest
+    container_name: axmouth.disco-music-bot
+    env_file:
+      - ./.env
+    environment:
+      - DATABASE_URL
+      - DISCORD_TOKEN
+      - YT_API_KEY

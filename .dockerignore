@@ -1,0 +1,10 @@
+target/
+Dockerfile.bot.final
+Dockerfile.bot.builder
+docker-compose.yml
+docker-deploy.sh
+.gitignore
+.dockerignore
+.prettierrc
+.github/*
+.env*

@@ -1,0 +1,70 @@
+name: Publish Docker image to GHCR then update the image version on server
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  push_to_registry_and_deploy_to_server:
+    if: github.ref == 'refs/heads/main'
+    name: Push Docker image to GitHub Packages
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repo
+        uses: actions/checkout@v2
+
+      - name: Login to Github Container Registry with Docker
+        run: echo ${{ secrets.GHCR_TOKEN }} | docker login ghcr.io -u $GITHUB_ACTOR --password-stdin
+      - name: Pull the previous version of Docker image for the build stage from Github Container Registry
+        run: docker pull ghcr.io/axmouth/disco-music-bot-builder || true
+      - name: Pull the previous version of the final Docker image from Github Container Registry
+        run: docker pull ghcr.io/axmouth/disco-music-bot || true
+      - name: Build the new version of the builder image
+        run: docker build . --file Dockerfile.bot.builder --tag ghcr.io/axmouth/disco-music-bot-builder --cache-from=ghcr.io/axmouth/disco-music-bot-builder
+      - name: Build the new version of the final image
+        run: docker build . --file Dockerfile.bot.final --tag ghcr.io/axmouth/disco-music-bot --cache-from=ghcr.io/axmouth/disco-music-bot
+      - name: Tag builder image
+        run: docker tag ghcr.io/axmouth/disco-music-bot-builder latest
+      - name: Tag final image
+        run: docker tag ghcr.io/axmouth/disco-music-bot latest
+      - name: Push builder image to GHCR
+        run: docker push ghcr.io/axmouth/disco-music-bot-builder || true
+      - name: Push final image to GHCR
+        run: docker push ghcr.io/axmouth/disco-music-bot || true
+      - name: Create empty .env file
+        run: touch .env
+      - name: Install SSH key
+        uses: shimataro/ssh-key-action@v2
+        with:
+          key: ${{ secrets.SSH_KEY }}
+          known_hosts: ${{ secrets.KNOWN_HOSTS }}
+      - name: Create empty .env file
+        run: touch .env
+      - name: Use docker-compose to remotely stop containers
+        env:
+          SERVER_IP: ${{ secrets.SERVER_IP }}
+          SERVER_USERNAME: ${{ secrets.SERVER_USERNAME }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+        run: COMPOSE_PARAMIKO_SSH=1 DOCKER_HOST="ssh://$SERVER_USERNAME@$SERVER_IP:$SSH_PORT" docker-compose stop
+      - name: Use docker-compose to remotely remove containers
+        env:
+          SERVER_IP: ${{ secrets.SERVER_IP }}
+          SERVER_USERNAME: ${{ secrets.SERVER_USERNAME }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+        run: COMPOSE_PARAMIKO_SSH=1 DOCKER_HOST="ssh://$SERVER_USERNAME@$SERVER_IP:$SSH_PORT" docker-compose rm -f
+      - name: Use docker-compose to remotely pull new containers
+        env:
+          SERVER_IP: ${{ secrets.SERVER_IP }}
+          SERVER_USERNAME: ${{ secrets.SERVER_USERNAME }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+        run: COMPOSE_PARAMIKO_SSH=1 DOCKER_HOST="ssh://$SERVER_USERNAME@$SERVER_IP:$SSH_PORT" docker-compose pull
+      - name: Use docker-compose to deploy remotely
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+          SERVER_IP: ${{ secrets.SERVER_IP }}
+          SERVER_USERNAME: ${{ secrets.SERVER_USERNAME }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+          YT_API_KEY: ${{ secrets.YT_API_KEY }}
+        run: COMPOSE_PARAMIKO_SSH=1 DOCKER_HOST="ssh://$SERVER_USERNAME@$SERVER_IP:$SSH_PORT" docker-compose up --remove-orphans -d
