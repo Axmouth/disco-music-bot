@@ -9,6 +9,7 @@
 //! features = ["framework", "standard_framework"]
 //! ```
 mod commands;
+mod util;
 
 use std::{collections::HashSet, env, sync::Arc};
 
@@ -44,7 +45,7 @@ impl EventHandler for Handler {
 }
 
 #[group]
-#[commands(multiply, ping, quit1, joinchan, play, stop, skip, pause, unpause, quit)]
+#[commands(multiply, ping, quit1, joinchan, play, stop, skip, queue, pause, unpause, quit)]
 struct General;
 
 #[tokio::main]
