@@ -10,11 +10,53 @@ use songbird::tracks::TrackHandle;
 use songbird::{EventContext, EventHandler, Songbird, TrackEvent};
 use std::sync::Arc;
 
+#[derive(Debug, Clone)]
+pub enum PlayArgs {
+    SearchQuery(String),
+    YoutubeLink(String),
+}
+
+impl From<Args> for PlayArgs {
+    fn from(mut args: Args) -> Self {
+        if args.len() == 1 {
+            let arg = args.single::<String>().unwrap_or_default();
+            let arg = arg
+                .strip_prefix('<')
+                .map(|u| u.strip_suffix('>'))
+                .flatten()
+                .unwrap_or(&arg);
+
+            let is_link = arg.starts_with("http");
+            if is_link {
+                PlayArgs::YoutubeLink(arg.to_string())
+            } else {
+                PlayArgs::SearchQuery(arg.to_string())
+            }
+        } else {
+            PlayArgs::SearchQuery(
+                args.iter()
+                    .map(|a| a.unwrap_or_default())
+                    .collect::<Vec<String>>()
+                    .join(" "),
+            )
+        }
+    }
+}
+
+impl std::fmt::Display for PlayArgs {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PlayArgs::SearchQuery(query) => write!(f, "{}", query),
+            PlayArgs::YoutubeLink(link) => write!(f, "{}", link),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct QueuedSong {
     channel_id: ChannelId,
     name: String,
-    url: String,
+    play: PlayArgs,
 }
 
 #[derive(Debug)]
@@ -53,26 +95,33 @@ pub struct SongFinishedEventHandler(pub Arc<Mutex<GuildMusicState>>);
 #[async_trait]
 impl EventHandler for SongFinishedEventHandler {
     async fn act(&self, _: &EventContext<'_>) -> Option<songbird::Event> {
-        println!("Song finished");
         let mut state = self.0.lock().await;
 
         let next = state.queue.pop();
 
         if let Some(next_song) = next {
-            let _ = send_msg(next_song.channel_id, &format!("Now playing {} ({} tracks in queue)", next_song.name, state.queue.len())).await;
-            state.playing_status = PlayingStatus::Playing {
-                name: next_song.name,
-            };
-
             if let Some(handler_lock) = state.manager.get(state.guild_id) {
                 let mut handler = handler_lock.lock().await;
                 handler.stop();
-                let input = match input_from_yt_url(&next_song.url, next_song.channel_id).await {
+                let input = match input_from_yt_url(&next_song.play, next_song.channel_id).await {
                     Ok(input) => input,
                     Err(why) => {
-                        println!("Error: {:?}", why);
+                        eprintln!("Error: {:?}", why);
                         return None;
                     }
+                };
+                let _ = send_msg(
+                    next_song.channel_id,
+                    &format!(
+                        "Now playing {}(<{}>), {} tracks in queue",
+                        input.metadata.title.as_deref().unwrap_or("-"),
+                        input.metadata.source_url.as_deref().unwrap_or("-"),
+                        state.queue.len()
+                    ),
+                )
+                .await;
+                state.playing_status = PlayingStatus::Playing {
+                    name: next_song.name,
                 };
                 let handle = handler.play_source(input);
                 handle
@@ -80,7 +129,7 @@ impl EventHandler for SongFinishedEventHandler {
                         songbird::Event::Track(TrackEvent::End),
                         SongFinishedEventHandler(self.0.clone()),
                     )
-                    .map_err(|e| println!("Failed to add event : {e}"))
+                    .map_err(|e| eprintln!("Failed to add event : {e}"))
                     .ok();
                 state.handle = Some(handle);
             }
@@ -140,7 +189,7 @@ async fn joinchan(ctx: &Context, msg: &Message) -> CommandResult {
 }
 
 #[command]
-async fn play(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
+async fn play(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     let user_id = msg.author.id;
 
     let guild = msg.guild(&ctx.cache).await.expect("Guild not found.");
@@ -152,28 +201,17 @@ async fn play(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
         .flatten()
         .ok_or(CommandError::from("No channel found."))?;
 
-    let url = match args.single::<String>() {
-        Ok(url) => url,
-        Err(_) => {
-            check_msg(
-                msg.channel_id
-                    .say(&ctx.http, "No video or audio provided, playing default")
-                    .await,
-            );
-
-            "https://youtube.com/watch?v=dQw4w9WgXcQ".to_owned()
-        }
-    };
-
-    if !url.starts_with("http") {
+    if args.is_empty() {
         check_msg(
             msg.channel_id
-                .say(&ctx.http, "Must provide a valid URL")
+                .say(&ctx.http, "No video or audio provided")
                 .await,
         );
 
         return Ok(());
     }
+
+    let play_arg = PlayArgs::from(args);
 
     let guild_id = guild.id;
 
@@ -207,38 +245,60 @@ async fn play(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     };
 
     if let Some(music_state_mutex) = music_states.guild_states.get_mut(&guild_id) {
-        println!("Got music state 2");
         let mut state = music_state_mutex.lock().await;
         let mut handler = handler_lock.lock().await;
 
-        println!("Got music states");
         if let PlayingStatus::Playing { .. } = state.playing_status {
-            println!("Got music state 3");
-
+            let input = match input_from_yt_url(&play_arg, channel_id).await {
+                Ok(input) => input,
+                Err(why) => {
+                    let _ = send_msg(channel_id, &format!("Error: {:?}", why)).await;
+                    eprintln!("Error: {:?}", why);
+                    return Ok(());
+                }
+            };
             check_msg(
                 msg.channel_id
                     .say(
                         &ctx.http,
-                        format!("Queing <{url}> ({} tracks in queue)", state.queue.len() + 1),
+                        format!(
+                            "Queing {} (<{}>), {} tracks in queue",
+                            input.metadata.title.as_deref().unwrap_or("-"),
+                            input.metadata.source_url.as_deref().unwrap_or("-"),
+                            state.queue.len() + 1
+                        ),
                     )
                     .await,
             );
-            state.queue.push(QueuedSong { name: url.clone(), url, channel_id: msg.channel_id });
+            state.queue.push(QueuedSong {
+                name: play_arg.to_string(),
+                play: play_arg,
+                channel_id: msg.channel_id,
+            });
         } else {
-            let input = match input_from_yt_url(&url, msg.channel_id).await {
+            let input = match input_from_yt_url(&play_arg, msg.channel_id).await {
                 Ok(input) => input,
                 Err(why) => {
-                    println!("Error: {:?}", why);
+                    let _ = send_msg(channel_id, &format!("Error: {:?}", why)).await;
+                    eprintln!("Error: {:?}", why);
                     return Ok(());
                 }
             };
-            println!("Got music state 4");
             check_msg(
                 msg.channel_id
-                    .say(&ctx.http, format!("Playing <{url}>"))
+                    .say(
+                        &ctx.http,
+                        format!(
+                            "Playing {} (<{}>)",
+                            input.metadata.title.as_deref().unwrap_or("-"),
+                            input.metadata.source_url.as_deref().unwrap_or("-")
+                        ),
+                    )
                     .await,
             );
-            state.playing_status = PlayingStatus::Playing { name: url };
+            state.playing_status = PlayingStatus::Playing {
+                name: play_arg.to_string(),
+            };
             let handle = handler.play_source(input);
             handle
                 .add_event(
@@ -252,46 +312,48 @@ async fn play(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
 
         let _ = &ctx;
     } else {
-        let input = match input_from_yt_url(&url, msg.channel_id).await {
+        let input = match input_from_yt_url(&play_arg, msg.channel_id).await {
             Ok(input) => input,
             Err(why) => {
-                println!("Error: {:?}", why);
+                eprintln!("Error: {:?}", why);
                 return Ok(());
             }
         };
         let mut handler = handler_lock.lock().await;
-        println!("Got music state 5");
         let queue = Vec::new();
-        let handle = handler.play_source(input);
-        println!("Got music state 6");
         check_msg(
             msg.channel_id
-                .say(&ctx.http, format!("Playing <{url}>"))
+                .say(
+                    &ctx.http,
+                    format!(
+                        "Playing {} (<{}>)",
+                        input.metadata.title.as_deref().unwrap_or("-"),
+                        input.metadata.source_url.as_deref().unwrap_or("-")
+                    ),
+                )
                 .await,
         );
+        let handle = handler.play_source(input);
         let music_state_mutex = Arc::new(Mutex::new(GuildMusicState {
             guild_id,
             queue,
-            playing_status: PlayingStatus::Playing { name: url },
+            playing_status: PlayingStatus::Playing {
+                name: play_arg.to_string(),
+            },
             handle: None,
             manager,
         }));
-        println!("Got music state 7");
         handle
             .add_event(
                 songbird::Event::Track(TrackEvent::End),
                 SongFinishedEventHandler(music_state_mutex.clone()),
             )
             .map_err(|e| CommandError::from(format!("Failed to add event : {e}")))?;
-        println!("Got music state 8");
         music_state_mutex.lock().await.handle = Some(handle);
-        println!("Got music state 9");
         music_states
             .guild_states
             .insert(guild_id, music_state_mutex.clone());
     }
-
-    println!("Done");
 
     Ok(())
 }
@@ -499,6 +561,21 @@ async fn quit(ctx: &Context, msg: &Message, _: Args) -> CommandResult {
     Ok(())
 }
 
+#[command]
+async fn search(ctx: &Context, msg: &Message, _: Args) -> CommandResult {
+    let guild = msg.guild(&ctx.cache).await.unwrap();
+    let guild_id = guild.id;
+
+    let manager = songbird::get(ctx)
+        .await
+        .expect("Songbird Voice client placed in at initialisation.")
+        .clone();
+
+    let _ = manager.leave(guild_id).await;
+
+    Ok(())
+}
+
 pub async fn send_msg(channel_id: ChannelId, msg: &str) -> SerenityResult<Message> {
     let token = std::env::var("DISCORD_TOKEN").expect("Expected a token in the environment");
     let discord_http = Http::new_with_token(&token);
@@ -508,11 +585,20 @@ pub async fn send_msg(channel_id: ChannelId, msg: &str) -> SerenityResult<Messag
     })
 }
 
-pub async fn input_from_yt_url(url: &str, channel_id: ChannelId) -> Result<Input, songbird::input::error::Error> {
-    songbird::ytdl(&url).await.map_err(|e| {
-        let _ = send_msg(channel_id, &format!("Error sourcing ffmpeg : {e}"));
+pub async fn input_from_yt_url(
+    play_args: &PlayArgs,
+    channel_id: ChannelId,
+) -> Result<Input, songbird::input::error::Error> {
+    match play_args {
+        PlayArgs::SearchQuery(q) => songbird::input::ytdl_search(q).await.map_err(|e| {
+            let _ = send_msg(channel_id, &format!("Error sourcing ffmpeg : {e}"));
             e
-        })
+        }),
+        PlayArgs::YoutubeLink(url) => songbird::ytdl(url).await.map_err(|e| {
+            let _ = send_msg(channel_id, &format!("Error sourcing ffmpeg : {e}"));
+            e
+        }),
+    }
 }
 
 /// Checks that a message successfully sent; if not, then logs why to stdout.

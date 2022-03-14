@@ -12,6 +12,10 @@ dashmap = "5.1"
 flume = "0.10.11"
 google-youtube3 = "3.0.0+20220303"
 
+[dependencies.redis ]
+version = "0.21.5"
+features = ["tokio-comp"]
+
 [dependencies.songbird]
 version = "0.2.2"
 features = ["serenity"]

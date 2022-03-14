@@ -9,6 +9,7 @@
 //! features = ["framework", "standard_framework"]
 //! ```
 mod commands;
+mod redis_store;
 mod util;
 
 use std::{collections::HashSet, env, sync::Arc};
@@ -24,6 +25,30 @@ use serenity::{
 };
 use songbird::SerenityInit;
 use tracing::{error, info};
+
+pub struct DiscordTokenContainer(pub String);
+
+impl TypeMapKey for DiscordTokenContainer {
+    type Value = String;
+}
+
+impl DiscordTokenContainer {
+    pub fn get(&self) -> &str {
+        &self.0
+    }
+}
+
+pub struct RedisClientContainer(pub redis::Client);
+
+impl TypeMapKey for RedisClientContainer {
+    type Value = redis::Client;
+}
+
+impl RedisClientContainer {
+    pub fn get(&self) -> &redis::Client {
+        &self.0
+    }
+}
 
 pub struct ShardManagerContainer;
 
@@ -45,7 +70,9 @@ impl EventHandler for Handler {
 }
 
 #[group]
-#[commands(multiply, ping, quit1, joinchan, play, stop, skip, queue, pause, unpause, quit)]
+#[commands(
+    multiply, ping, quit1, joinchan, pause, play, search, stop, skip, queue, quit, unpause
+)]
 struct General;
 
 #[tokio::main]
@@ -61,6 +88,10 @@ async fn main() {
     tracing_subscriber::fmt::init();
 
     let token = env::var("DISCORD_TOKEN").expect("Expected a token in the environment");
+    let redis_client = redis::Client::open(
+        env::var("REDIS_URL").expect("Expected a redis url in the environment"),
+    )
+    .expect("Failed to connect to Redis");
 
     let http = Http::new_with_token(&token);
 
@@ -90,6 +121,8 @@ async fn main() {
     {
         let mut data = client.data.write().await;
         data.insert::<ShardManagerContainer>(client.shard_manager.clone());
+        data.insert::<DiscordTokenContainer>(token);
+        data.insert::<RedisClientContainer>(redis_client);
     }
 
     let shard_manager = client.shard_manager.clone();

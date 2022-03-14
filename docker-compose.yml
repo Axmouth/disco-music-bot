@@ -12,3 +12,11 @@ services:
       - DATABASE_URL
       - DISCORD_TOKEN
       - YT_API_KEY
+  # cache prefixes, yt searches
+  axmouth.disco-music-bo-redis:
+    container_name: axmouth.disco-music-bo-redis
+    image: redis:6.2-alpine
+    ports:
+      - 6379:6379
+    command: redis-server --save 60 1 --requirepass MDNcVb924a --loglevel warning
+
