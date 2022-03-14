@@ -11,6 +11,7 @@ services:
     environment:
       - DATABASE_URL
       - DISCORD_TOKEN
+      - REDIS_URL
       - YT_API_KEY
   # save prefixes, cache yt searches, play queue, playing state
   axmouth.disco-music-bo-redis:

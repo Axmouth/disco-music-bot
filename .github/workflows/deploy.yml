@@ -63,6 +63,7 @@ jobs:
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           DISCORD_TOKEN: ${{ secrets.DISCORD_TOKEN }}
+          REDIS_URL: ${{ secrets.REDIS_URL }}
           SERVER_IP: ${{ secrets.SERVER_IP }}
           SERVER_USERNAME: ${{ secrets.SERVER_USERNAME }}
           SSH_PORT: ${{ secrets.SSH_PORT }}
