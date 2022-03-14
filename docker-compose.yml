@@ -12,7 +12,7 @@ services:
       - DATABASE_URL
       - DISCORD_TOKEN
       - YT_API_KEY
-  # cache prefixes, yt searches
+  # save prefixes, cache yt searches, play queue, playing state
   axmouth.disco-music-bo-redis:
     container_name: axmouth.disco-music-bo-redis
     image: redis:6.2-alpine

@@ -188,6 +188,10 @@ async fn joinchan(ctx: &Context, msg: &Message) -> CommandResult {
     Ok(())
 }
 
+// TODO: Show song length and queue length (time remaining)
+// TODO: Move queue and playing current state to redis. If some state is kept, switch from Mutex to RwLock
+// TODO: Possibly use youtube api to make it more efficient to search
+// TODO: Cache song metadata in redis
 #[command]
 async fn play(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     let user_id = msg.author.id;
