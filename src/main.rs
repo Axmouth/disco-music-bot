@@ -14,7 +14,8 @@ mod util;
 
 use std::{collections::HashSet, env, sync::Arc};
 
-use commands::{math::*, meta::*, music::*, owner::*};
+use commands::{meta::*, music::*, owner::*};
+use redis_store::RedisStore;
 use serenity::{
     async_trait,
     client::bridge::gateway::ShardManager,
@@ -69,22 +70,17 @@ impl EventHandler for Handler {
     }
 }
 
+// TODO: Add help command
 #[group]
 #[commands(
-    multiply, ping, quit1, joinchan, pause, play, search, stop, skip, queue, quit, unpause
+    prefix, ping, quit1, joinchan, pause, play, search, stop, skip, queue, quit, unpause
 )]
 struct General;
 
 #[tokio::main]
 async fn main() {
-    // This will load the environment variables located at `./.env`, relative to
-    // the CWD. See `./.env.example` for an example on how to structure this.
     dotenv::dotenv().expect("Failed to load .env file");
 
-    // Initialize the logger to use environment variables.
-    //
-    // In this case, a good default is setting the environment variable
-    // `RUST_LOG` to `debug`.
     tracing_subscriber::fmt::init();
 
     let token = env::var("DISCORD_TOKEN").expect("Expected a token in the environment");
@@ -108,7 +104,35 @@ async fn main() {
 
     // Create the framework
     let framework = StandardFramework::new()
-        .configure(|c| c.owners(owners).prefix("~"))
+        .configure(|c| {
+            c.owners(owners)
+                .dynamic_prefix(|ctx, msg| {
+                    Box::pin(async {
+                        match ctx
+                            .data
+                            .read()
+                            .await
+                            .get::<RedisClientContainer>()
+                            .expect("Failed to get RedisClientContainer")
+                            .get_async_connection()
+                            .await
+                        {
+                            Ok(conn) => match msg.guild_id {
+                                Some(guild_id) => {
+                                    let prefix = RedisStore::new(conn).get_prefix(guild_id).await;
+                                    match prefix {
+                                        Ok(prefix) => prefix,
+                                        Err(_) => None,
+                                    }
+                                }
+                                None => None,
+                            },
+                            Err(_) => None,
+                        }
+                    })
+                })
+                .prefix("~")
+        })
         .group(&GENERAL_GROUP);
 
     let mut client = Client::builder(&token)

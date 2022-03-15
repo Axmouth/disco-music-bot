@@ -14,7 +14,7 @@ google-youtube3 = "3.0.0+20220303"
 
 [dependencies.redis ]
 version = "0.21.5"
-features = ["tokio-comp"]
+features = [ "aio", "tokio-comp"]
 
 [dependencies.songbird]
 version = "0.2.2"
