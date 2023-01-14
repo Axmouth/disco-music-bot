@@ -4,9 +4,9 @@ ARG APP=/usr/src/app
 RUN apt-get update \
     && apt-get install -y ca-certificates tzdata ffmpeg curl python3 \
     && rm -rf /var/lib/apt/lists/*
-RUN curl -L https://yt-dl.org/downloads/latest/youtube-dl -o /usr/local/bin/youtube-dl
-RUN chmod a+rx /usr/local/bin/youtube-dl
-RUN ln -s /usr/bin/python3 /usr/local/bin/python
+# RUN curl -L https://yt-dl.org/downloads/latest/youtube-dl -o /usr/local/bin/youtube-dl
+# RUN chmod a+rx /usr/local/bin/youtube-dl
+# RUN ln -s /usr/bin/python3 /usr/local/bin/python
 
 ENV TZ=Etc/UTC \
     APP_USER=appuser
@@ -17,6 +17,7 @@ RUN groupadd $APP_USER \
     && mkdir -p ${APP}
 RUN mkdir -p ${APP}
 COPY --from=ghcr.io/axmouth/disco-music-bot-builder /code/disco-music-bot/target/release/disco-music-bot ${APP}
+# COPY --from=ghcr.io/axmouth/disco-music-bot-builder /code/disco-music-bot/target/debug/disco-music-bot ${APP}
 RUN touch ${APP}/.env
 
 RUN chown -R $APP_USER:$APP_USER ${APP}
