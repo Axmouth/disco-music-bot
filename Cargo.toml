@@ -5,25 +5,30 @@ edition = "2021"
 
 [dependencies]
 dotenv = "0.15.0"
-tracing = "0.1"
-tracing-subscriber = "0.3.9"
+tracing = "0.1.37"
+tracing-subscriber = "0.3.16"
 tracing-futures = "0.2"
-dashmap = "5.1"
-flume = "0.10.11"
-google-youtube3 = "3.0.0+20220303"
+dashmap = "5.4.0"
+flume = "0.10.14"
 
 [dependencies.redis ]
-version = "0.21.5"
+version = "0.22.2"
 features = [ "aio", "tokio-comp"]
 
 [dependencies.songbird]
-version = "0.2.2"
-features = ["serenity"]
+version = "0.1.0"
+features = ["serenity-rustls"]
 
 [dependencies.serenity]
 version = "0.10"
-features = ["framework", "standard_framework", "voice", "rustls_backend"]
+# features = ["framework", "standard_framework", "voice", "rustls_backend"]
+features = ["client", "cache", "standard_framework", "voice", "rustls_backend"]
 
 [dependencies.tokio]
-version = "1"
+version = "1.24.1"
 features = ["macros", "signal", "rt-multi-thread"]
+
+[dependencies.lavalink-rs]
+version = "0.8.0"
+#features = ["rustls", "serenity", "discord-gateway", "tracing-log"]
+features = ["serenity", "rustls"]

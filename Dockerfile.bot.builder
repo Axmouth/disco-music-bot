@@ -8,10 +8,12 @@ RUN USER=root cargo init --bin disco-music-bot
 COPY ./Cargo.toml /code/disco-music-bot/Cargo.toml
 WORKDIR /code/disco-music-bot
 RUN cargo build --release
+# RUN cargo build
 RUN rm src/*.rs
 
 ADD . .
 
 WORKDIR /code/disco-music-bot
 RUN cargo build --release
+# RUN cargo build
 

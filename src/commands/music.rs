@@ -8,6 +8,7 @@ use serenity::{async_trait, prelude::*};
 use songbird::input::Input;
 use songbird::tracks::TrackHandle;
 use songbird::{EventContext, EventHandler, Songbird, TrackEvent};
+use std::fmt::Debug;
 use std::sync::Arc;
 
 #[derive(Debug, Clone)]
@@ -22,8 +23,7 @@ impl From<Args> for PlayArgs {
             let arg = args.single::<String>().unwrap_or_default();
             let arg = arg
                 .strip_prefix('<')
-                .map(|u| u.strip_suffix('>'))
-                .flatten()
+                .and_then(|u| u.strip_suffix('>'))
                 .unwrap_or(&arg);
 
             let is_link = arg.starts_with("http");
@@ -83,19 +83,19 @@ pub struct GuildMusicState {
 
 #[derive(Debug, Clone, Default)]
 pub struct MusicState {
-    pub guild_states: DashMap<GuildId, Arc<Mutex<GuildMusicState>>>,
+    pub guild_states: DashMap<GuildId, Arc<RwLock<GuildMusicState>>>,
 }
 
 impl TypeMapKey for MusicState {
     type Value = MusicState;
 }
 
-pub struct SongFinishedEventHandler(pub Arc<Mutex<GuildMusicState>>);
+pub struct SongFinishedEventHandler(pub Arc<RwLock<GuildMusicState>>);
 
 #[async_trait]
 impl EventHandler for SongFinishedEventHandler {
     async fn act(&self, _: &EventContext<'_>) -> Option<songbird::Event> {
-        let mut state = self.0.lock().await;
+        let mut state = self.0.write().await;
 
         let next = state.queue.pop();
 
@@ -141,7 +141,7 @@ impl EventHandler for SongFinishedEventHandler {
     }
 }
 
-pub struct SongStartEventHandler(pub Arc<Mutex<GuildMusicState>>);
+pub struct SongStartEventHandler(pub Arc<RwLock<GuildMusicState>>);
 
 #[async_trait]
 impl EventHandler for SongStartEventHandler {
@@ -150,7 +150,7 @@ impl EventHandler for SongStartEventHandler {
     }
 }
 
-pub struct SongPauseEventHandler(pub Arc<Mutex<GuildMusicState>>);
+pub struct SongPauseEventHandler(pub Arc<RwLock<GuildMusicState>>);
 
 #[async_trait]
 impl EventHandler for SongPauseEventHandler {
@@ -166,14 +166,13 @@ async fn joinchan(ctx: &Context, msg: &Message) -> CommandResult {
     let guild = msg
         .guild(ctx.cache.clone())
         .await
-        .ok_or(CommandError::from("No guild found."))?;
+        .ok_or_else(|| CommandError::from("No guild found."))?;
 
     let channel_id = guild
         .voice_states
         .get(&user_id)
-        .map(|state| state.channel_id)
-        .flatten()
-        .ok_or(CommandError::from("No channel found."))?;
+        .and_then(|state| state.channel_id)
+        .ok_or_else(|| CommandError::from("No channel found."))?;
 
     let guild = msg.guild(&ctx.cache).await.unwrap();
     let guild_id = guild.id;
@@ -201,9 +200,8 @@ async fn play(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     let channel_id = guild
         .voice_states
         .get(&user_id)
-        .map(|state| state.channel_id)
-        .flatten()
-        .ok_or(CommandError::from("No channel found."))?;
+        .and_then(|state| state.channel_id)
+        .ok_or_else(|| CommandError::from("No channel found."))?;
 
     if args.is_empty() {
         check_msg(
@@ -249,7 +247,7 @@ async fn play(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
     };
 
     if let Some(music_state_mutex) = music_states.guild_states.get_mut(&guild_id) {
-        let mut state = music_state_mutex.lock().await;
+        let mut state = music_state_mutex.write().await;
         let mut handler = handler_lock.lock().await;
 
         if let PlayingStatus::Playing { .. } = state.playing_status {
@@ -338,7 +336,7 @@ async fn play(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
                 .await,
         );
         let handle = handler.play_source(input);
-        let music_state_mutex = Arc::new(Mutex::new(GuildMusicState {
+        let music_state_mutex = Arc::new(RwLock::new(GuildMusicState {
             guild_id,
             queue,
             playing_status: PlayingStatus::Playing {
@@ -353,7 +351,7 @@ async fn play(ctx: &Context, msg: &Message, args: Args) -> CommandResult {
                 SongFinishedEventHandler(music_state_mutex.clone()),
             )
             .map_err(|e| CommandError::from(format!("Failed to add event : {e}")))?;
-        music_state_mutex.lock().await.handle = Some(handle);
+        music_state_mutex.write().await.handle = Some(handle);
         music_states
             .guild_states
             .insert(guild_id, music_state_mutex.clone());
@@ -407,7 +405,7 @@ async fn skip(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
             .expect("MusicState not found")
     };
     let queue_len = if let Some(music_state_mutex) = music_states.guild_states.get_mut(&guild_id) {
-        let mut state = music_state_mutex.lock().await;
+        let mut state = music_state_mutex.write().await;
 
         if n > 1 {
             for _ in 0..n - 1 {
@@ -459,7 +457,7 @@ async fn pause(ctx: &Context, msg: &Message) -> CommandResult {
             .expect("MusicState not found")
     };
     if let Some(music_state_mutex) = music_states.guild_states.get_mut(&guild_id) {
-        let mut state = music_state_mutex.lock().await;
+        let mut state = music_state_mutex.write().await;
         if let PlayingStatus::Playing { name } = &state.playing_status {
             state.playing_status = PlayingStatus::Paused { name: name.clone() };
             check_msg(msg.channel_id.say(&ctx.http, "Pausing").await);
@@ -494,7 +492,7 @@ async fn queue(ctx: &Context, msg: &Message) -> CommandResult {
             .expect("MusicState not found")
     };
     if let Some(music_state_mutex) = music_states.guild_states.get_mut(&guild_id) {
-        let mut state = music_state_mutex.lock().await;
+        let mut state = music_state_mutex.write().await;
         if let PlayingStatus::Playing { name } = &state.playing_status {
             state.playing_status = PlayingStatus::Paused { name: name.clone() };
             check_msg(msg.channel_id.say(&ctx.http, "Pausing").await);
@@ -529,7 +527,7 @@ async fn unpause(ctx: &Context, msg: &Message) -> CommandResult {
             .expect("MusicState not found")
     };
     if let Some(music_state_mutex) = music_states.guild_states.get_mut(&guild_id) {
-        let mut state = music_state_mutex.lock().await;
+        let mut state = music_state_mutex.write().await;
         if let PlayingStatus::Paused { name } = &state.playing_status {
             state.playing_status = PlayingStatus::Playing { name: name.clone() };
             check_msg(msg.channel_id.say(&ctx.http, "Unpausing").await);

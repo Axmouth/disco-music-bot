@@ -60,7 +60,7 @@ async fn prefix(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
                     .await?;
             }
             Err(e) => {
-                eprintln!("Failed to set prefix : {}", e);
+                eprintln!("Failed to set prefix : {:?}", e);
                 msg.channel_id
                     .say(&ctx.http, "Failed to set prefix")
                     .await?;
@@ -87,7 +87,7 @@ async fn prefix(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
                 Ok(Some(prefix)) => msg.channel_id.say(&ctx.http, &prefix).await?,
                 Ok(None) => msg.channel_id.say(&ctx.http, "No prefix set").await?,
                 Err(e) => {
-                    eprintln!("Failed to get prefix : {}", e);
+                    eprintln!("Failed to get prefix : {:?}", e);
                     msg.channel_id
                         .say(&ctx.http, "Failed to get prefix")
                         .await?
