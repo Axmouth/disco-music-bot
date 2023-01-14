@@ -15,6 +15,7 @@ services:
       - YT_API_KEY
       - LAVALINK_HOST
       - LAVALINK_PORT
+      - LAVALINK_PASSWORD=youshallnotpass
     networks:
       - axmouth.disco-music-bot-network
   # save prefixes, cache yt searches, play queue, playing state
@@ -34,7 +35,7 @@ services:
     container_name: axmouth.disco-music-bot-lavalink
     image: fredboat/lavalink:3.6.2
     environment:
-      - LAVALINK_SERVER_PASSWORD=youshallnotpass
+      - LAVALINK_SERVER_PASSWORD=${LAVALINK_PASSWORD}
     networks:
       - axmouth.disco-music-bot-network
 

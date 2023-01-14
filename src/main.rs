@@ -77,9 +77,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
     info!("Tracing initialized");
 
-    let token = env::var("DISCORD_TOKEN").expect("Expected a token in the environment");
-    let lavalink_port: u16 = env::var("LAVALINK_PORT").unwrap().parse().unwrap();
-    let lavalink_host: String = env::var("LAVALINK_HOST").unwrap();
+    let token = env::var("DISCORD_TOKEN").expect("DISCORD_TOKEN");
+    let lavalink_port: u16 = env::var("LAVALINK_PORT").expect("LAVALINK_PORT").parse().unwrap();
+    let lavalink_host: String = env::var("LAVALINK_HOST").expect("LAVALINK_HOST");
 
     let http = Http::new_with_token(&token);
 
@@ -98,12 +98,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .framework(framework)
         .register_songbird()
         .await
-        .expect("Err creating client");    
+        .expect("Err creating client");
 
     let lava_client = LavalinkClient::builder(bot_id)
         //let lava_client = LavalinkClient::builder(bot_id, &token)
         .set_password(
-            env::var("LAVALINK_PASSWORD").unwrap_or_else(|_| "youshallnotpass".to_string()),
+            env::var("LAVALINK_PASSWORD").expect("LAVALINK_PASSWORD"),
         )
         .set_is_ssl(false)
         .set_host(lavalink_host)
@@ -120,8 +120,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .start()
         .await
         .map_err(|why| warn!("Client ended: {:?}", why));
-    
-    eprintln!("client3");
 
     Ok(())
 }

@@ -68,4 +68,7 @@ jobs:
           SERVER_USERNAME: ${{ secrets.SERVER_USERNAME }}
           SSH_PORT: ${{ secrets.SSH_PORT }}
           YT_API_KEY: ${{ secrets.YT_API_KEY }}
+          LAVALINK_HOST: ${{ secrets.LAVALINK_HOST }}
+          LAVALINK_PORT: ${{ secrets.LAVALINK_PORT }}
+          LAVALINK_PASSWORD: ${{ secrets.LAVALINK_PASSWORD }}
         run: COMPOSE_PARAMIKO_SSH=1 DOCKER_HOST="ssh://$SERVER_USERNAME@$SERVER_IP:$SSH_PORT" docker-compose up --remove-orphans -d
